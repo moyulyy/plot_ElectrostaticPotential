@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.pyc
+
+# PyInstaller
+build/
+dist/
+
+# 大体积 VASP 原始数据 (用户本地工作数据, 不上传)
+test/
+
+# 运行 / 导出产物
+*.log
+/ESP_surface.png
+/_*.png

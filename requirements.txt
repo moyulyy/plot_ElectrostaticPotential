@@ -1,0 +1,7 @@
+# 静电势表面查看器 依赖
+# 安装:  python -m pip install -r requirements.txt
+numpy>=1.24
+PySide6>=6.5
+
+# 可选: 仅当需要运行 selftest_render.py (无头渲染自检) 时安装
+# playwright>=1.40
