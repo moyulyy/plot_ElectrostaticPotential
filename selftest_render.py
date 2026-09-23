@@ -60,7 +60,7 @@ def main():
         "scheme_colors": ["#FF0000", "#00FF00", "#0000FF"],
         "atom_style": "ballstick", "atom_scale": 1.0,
         "show_cell": True, "cell_color": "#666666", "bg": "#FFFFFF",
-        "view_name": "top",
+        "view_name": "top", "pot_sign": -1,
     }
     html = VW.build_html(st.xyz(), st.cell_edges(), pot, dens,
                          V.view_quaternions(st.cell), V.fit_sphere(st),

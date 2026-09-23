@@ -322,16 +322,31 @@ def view_quaternions(cell: np.ndarray) -> dict:
     return out
 
 
-def fit_sphere(struct: "Structure", include_cell: bool = True) -> List[float]:
-    """取景包围球 [cx, cy, cz, radius] (含晶胞盒, 避免格子被切掉)。"""
-    pts = [np.asarray(struct.cart, dtype=float)]
+def fit_sphere(struct: "Structure", include_cell: bool = None) -> List[float]:
+    """取景包围球 [cx, cy, cz, radius]。
+
+    include_cell=None (默认自动): 若晶胞盒远大于原子范围 (分子+大真空盒),
+    则只按原子取景; 否则连同晶胞盒一起装下 (表面/体相结构)。
+    """
+    atoms = np.asarray(struct.cart, dtype=float)
+    ca = (atoms.min(0) + atoms.max(0)) / 2.0
+    r_atom = max(float(np.linalg.norm(atoms - ca, axis=1).max()), 1.0)
+
+    a, b, c = struct.cell
+    o = np.zeros(3)
+    corners = np.array([o, a, b, c, a + b, a + c, b + c, a + b + c])
+    cc = (corners.min(0) + corners.max(0)) / 2.0
+    r_cell = float(np.linalg.norm(corners - cc, axis=1).max())
+
+    if include_cell is None:
+        include_cell = r_cell < 2.0 * r_atom
+
+    pts = [atoms]
     if include_cell:
-        a, b, c = struct.cell
-        o = np.zeros(3)
-        pts.append(np.array([o, a, b, c, a + b, a + c, b + c, a + b + c]))
+        pts.append(corners)
     allp = np.vstack([p for p in pts if len(p)])
     lo, hi = allp.min(0), allp.max(0)
     center = (lo + hi) / 2.0
     radius = float(np.linalg.norm(allp - center, axis=1).max())
     return [float(center[0]), float(center[1]), float(center[2]),
-            max(radius, 1.0)]
+            max(radius, 1.0), 1.0 if include_cell else 0.0]

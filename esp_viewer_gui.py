@@ -307,11 +307,15 @@ class LoadWorker(QThread):
                 dens = {"header": V.cube_header(*d_down.shape, st.cell),
                         "b64": V.volume_base64(d_down)}
                 stats["rho_p95"] = float(np.percentile(rho, 95))
-                band = (rho > 0.04) & (rho < 0.25)        # 密度面附近的电势
-                if int(band.sum()) > 200:
+                # 自适应默认等值面水平: 分子(大量真空) ~0.01, 固体 ~0.1
+                stats["dens_default"] = (0.1 if float((rho > 0.1).mean()) > 0.05
+                                         else 0.01)
+                ref = stats["dens_default"]
+                band = (rho > ref * 0.5) & (rho < ref * 2.0)   # 等值面附近的电势
+                if int(band.sum()) > 100:
                     pv = data[band]
-                    lo = float(np.percentile(pv, 1))
-                    hi = float(np.percentile(pv, 99))
+                    lo = float(np.percentile(pv, 2))
+                    hi = float(np.percentile(pv, 98))
                     if hi - lo < 1e-6:
                         lo, hi = -amp, amp
                     stats["esp_lo"], stats["esp_hi"] = lo, hi
@@ -743,11 +747,11 @@ class MainWindow(QWidget):
     def _build_iso_card(self, lay):
         card = Card("等值面")
         lay.addWidget(card)
-        self.row_dens_level = SliderRow("密度水平", 0.005, 2.0, 0.1,
-                                        decimals=4, log=True, step=0.01)
+        self.row_dens_level = SliderRow("密度水平", 0.0002, 0.5, 0.01,
+                                        decimals=4, log=True, step=0.005)
         self.row_dens_level.changed.connect(lambda _: self._debounce.start())
         card.add(self.row_dens_level)
-        card.add(hint_label("电荷密度等值面水平 (e/Å³)。VESTA 常用 0.1 左右。"))
+        card.add(hint_label("电荷密度等值面水平 (e/Å³)。分子常用 ~0.01, 固体常用 ~0.1。"))
 
     # -- 颜色卡片 --
     def _build_color_card(self, lay):
@@ -781,8 +785,22 @@ class MainWindow(QWidget):
         r4.addWidget(lab)
         r4.addWidget(self.spin_vmax)
         card.add_layout(r4)
-        card.add(hint_label("彩条范围即静电势映射区间 (eV), 可自定义; "
+        card.add(hint_label("彩条范围即电势映射区间 (eV), 可自定义; "
                             "3D 视图左侧彩条会同步更新。"))
+
+        # 电势符号: VASP LOCPOT 是电子势能 (= -静电势), 默认取负得到标准 ESP
+        rr = QHBoxLayout()
+        rr.addWidget(field_label("标准 ESP", 72))
+        rr.addStretch(1)
+        self.sw_sign = Switch()
+        self.sw_sign.setChecked(True, animate=False)
+        self.sw_sign.apply_theme(THEME)
+        self._switches.append(self.sw_sign)
+        self.sw_sign.toggled.connect(lambda _: self._apply(0))
+        rr.addWidget(self.sw_sign)
+        card.add_layout(rr)
+        card.add(hint_label("开 = 标准静电势 ESP (= −LOCPOT): 电负性大的 O 为负/蓝, "
+                            "H 为正/红。关 = 原始 LOCPOT。"))
 
         self.color_triple = QWidget()
         v3 = QVBoxLayout(self.color_triple)
@@ -961,25 +979,30 @@ class MainWindow(QWidget):
                   f"降采样 ×{factor}")
 
         if res["dens"] and "rho_p95" in stats:
-            rho95 = max(0.05, stats["rho_p95"])
-            self.row_dens_level.set_range(0.005, max(1.0, rho95 * 2.0))
-            self.row_dens_level.set_value(0.1)
-            half = 2.0 * max(abs(stats["esp_lo"]), abs(stats["esp_hi"]))
-            half = max(half, 1.0)
+            dflt = float(stats.get("dens_default", 0.01))
+            self.row_dens_level.set_range(max(0.0001, dflt / 50.0), dflt * 50.0)
+            self.row_dens_level.set_value(dflt)
+            half = 1.1 * max(abs(stats["esp_lo"]), abs(stats["esp_hi"]))
+            half = max(half, 0.5)
             self.spin_vmin.setValue(-half)
             self.spin_vmax.setValue(half)
 
         self.lbl_file.setText(f"{Path(self.edit_dir.text()).name}\n"
                               f"{st.n_atoms} 原子")
-        self._load_viewer(res)
+        # 分子（大真空盒）默认不显示晶胞框
+        fit = V.fit_sphere(st)
+        self.sw_cell.setChecked(bool(fit[4] > 0.5), animate=False)
+        self._load_viewer(res, fit)
 
-    def _load_viewer(self, res: dict):
+    def _load_viewer(self, res: dict, fit=None):
         st: V.Structure = res["struct"]
         cfg = self._collect_settings()
         self._ready = False
+        if fit is None:
+            fit = V.fit_sphere(st)
         self.viewer.load_scene(st.xyz(), st.cell_edges(), res["pot"],
                                res["dens"], V.view_quaternions(st.cell),
-                               V.fit_sphere(st), cfg)
+                               fit, cfg)
         self.footer_status.setText("正在初始化 3D 视图 (正交投影) …")
 
     def _on_viewer_ready(self):
@@ -1015,6 +1038,7 @@ class MainWindow(QWidget):
             "scheme_min": self.spin_vmin.value(),
             "scheme_max": self.spin_vmax.value(),
             "scheme_colors": self._triple_colors(),
+            "pot_sign": -1 if self.sw_sign.isChecked() else 1,
             "atom_style": self.combo_atom.currentData() or "ballstick",
             "atom_scale": self.row_atom_scale.value(),
             "show_cell": self.sw_cell.isChecked(),

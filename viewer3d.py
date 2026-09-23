@@ -93,17 +93,22 @@ var potVD  = makeVD(POT);
 var densVD = makeVD(DENS);
 var cellShapes = [];
 var LAST_CFG = INIT;
+// 显示的电势符号: -1 = 标准 ESP (=-LOCPOT), +1 = 原始 LOCPOT
+var POT_SIGN = 1;
 
 // 取景用的点 (相对包围球中心), 用于逐视角贴合
+var INC_CELL = (FIT.length > 4) ? FIT[4] > 0.5 : true;
 var PTS = [];
 (function () {{
   var a = MODEL.selectedAtoms({{}});
   for (var i = 0; i < a.length; i++)
     PTS.push([a[i].x - FIT[0], a[i].y - FIT[1], a[i].z - FIT[2]]);
-  for (var j = 0; j < EDGES.length; j++) {{
-    var e = EDGES[j];
-    PTS.push([e[0] - FIT[0], e[1] - FIT[1], e[2] - FIT[2]]);
-    PTS.push([e[3] - FIT[0], e[4] - FIT[1], e[5] - FIT[2]]);
+  if (INC_CELL) {{
+    for (var j = 0; j < EDGES.length; j++) {{
+      var e = EDGES[j];
+      PTS.push([e[0] - FIT[0], e[1] - FIT[1], e[2] - FIT[2]]);
+      PTS.push([e[3] - FIT[0], e[4] - FIT[1], e[5] - FIT[2]]);
+    }}
   }}
 }})();
 
@@ -178,6 +183,13 @@ function clearAll() {{
 // 唯一的显示模式: 密度等值面 + 电势彩虹着色
 window.applySettings = function(cfg) {{
   LAST_CFG = cfg;
+  // 符号切换: VASP LOCPOT 是电子势能 (= -静电势), 默认取负得到标准 ESP
+  var want = (cfg.pot_sign === undefined) ? 1 : cfg.pot_sign;
+  if (potVD && want !== POT_SIGN) {{
+    var arr = potVD.data;
+    for (var i = 0; i < arr.length; i++) arr[i] = -arr[i];
+    POT_SIGN = want;
+  }}
   clearAll();
   atomStyle(cfg);
   drawCell(cfg.show_cell, cfg.cell_color);
@@ -235,7 +247,9 @@ function applyCamera(quat) {{
   var fov = fovRadians();
   var aspect = viewAspect();
   // 逐视角贴合: 正交视锥需要覆盖投影后的 bbox
-  var halfH = Math.max(my, mx / aspect) * 1.06;   // 6% 边距
+  // 分子(不含晶胞盒)时预留密度等值面向外的延伸 (~3 Å)
+  var extra = INC_CELL ? 0.0 : 3.0;
+  var halfH = Math.max(my, mx / aspect) * 1.06 + extra;
   var dist = Math.max(halfH, 1e-3) / (ORTHO_ZOOM * Math.tan(fov));
   viewer.rotationGroup.position.set(0, 0, 0);
   viewer.rotationGroup.position.z = viewer.CAMERA_Z - dist;
