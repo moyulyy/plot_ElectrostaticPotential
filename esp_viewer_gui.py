@@ -54,6 +54,35 @@ def auto_factor(dims) -> int:
 ATOM_STYLES = [("ballstick", "球棍"), ("sphere", "球体"),
                ("stick", "棍棒"), ("line", "线框"), ("none", "隐藏原子")]
 
+APP_ID = "moyulyy.plot_ElectrostaticPotential.ESP_Viewer"
+
+
+def app_icon():
+    """加载应用图标 (打包后在 _internal/assets, 开发时在 assets)。"""
+    for p in (resource_dir() / "assets" / "app.ico",
+              BASE_DIR / "assets" / "app.ico"):
+        if p.is_file():
+            ico = QIcon(str(p))
+            if not ico.isNull():
+                return ico
+    return QIcon()
+
+
+def set_windows_appid():
+    """设置 AppUserModelID。
+
+    Windows 任务栏默认按进程图标分组: 用 python/pythonw 跑脚本时会显示
+    Python 图标。设置一个显式的 AppUserModelID 并给窗口设图标后，任务栏
+    会使用本程序的图标 (而不是 Python 的)。
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_ID)
+    except Exception:  # noqa: BLE001
+        pass
+
 SCHEMES = [("rainbow", "彩虹 (VESTA)"), ("rainbow_r", "反向彩虹"),
            ("rwb", "红-白-蓝"), ("bwr", "蓝-白-红"),
            ("roygb", "红橙黄绿蓝"), ("sinebow", "正弦彩虹"),
@@ -368,11 +397,9 @@ class MainWindow(QWidget):
 
     # ------------------------------------------------------------------
     def _set_icon(self):
-        for ico in (resource_dir() / "assets" / "app.ico",
-                    BASE_DIR / "assets" / "app.ico"):
-            if ico.is_file():
-                self.setWindowIcon(QIcon(str(ico)))
-                break
+        ico = app_icon()
+        if not ico.isNull():
+            self.setWindowIcon(ico)
 
     def _maybe_autoload(self):
         pot, dens = self._detected()
@@ -1114,13 +1141,19 @@ class MainWindow(QWidget):
 
 # ==========================================================================
 def main():
+    set_windows_appid()
     QApplication.setAttribute(Qt.AA_ShareOpenGLContexts, True)
     selftest = "--selftest" in sys.argv
     argv = [a for a in sys.argv if a != "--selftest"]
     app = QApplication(argv)
+    ico = app_icon()
+    if not ico.isNull():
+        app.setWindowIcon(ico)
     apply_theme(app, LIGHT)
     data_dir = argv[1] if len(argv) > 1 else None
     win = MainWindow(data_dir=data_dir)
+    if not ico.isNull():
+        win.setWindowIcon(ico)
     win.show()
 
     if selftest:
